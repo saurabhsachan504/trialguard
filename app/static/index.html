@@ -1,0 +1,473 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>YouTube Summarizer — summarize any video in its own language</title>
+<meta name="description" content="Paste a YouTube link and get an AI summary, key points and downloadable PDF notes — in the video's own language." />
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%237c3aed'/><path d='M13 10l9 6-9 6z' fill='white'/></svg>" />
+<style>
+  :root{
+    --brand1:#7c3aed; --brand2:#a855f7; --brand3:#ec4899;
+    --bg:#ffffff; --panel:#ffffff; --ink:#141220; --muted:#6b6880;
+    --line:#e7e4f0; --field:#ffffff; --chip:#f4f2fb;
+    --shadow:0 18px 40px rgba(60,30,120,.13);
+  }
+  [data-theme="dark"]{
+    --bg:#0c0a1a; --panel:#151230; --ink:#e9e6f8; --muted:#a49dc4;
+    --line:#2b2551; --field:#100d26; --chip:#1c1740;
+    --shadow:0 18px 44px rgba(0,0,0,.55);
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0}
+  body{
+    background:var(--bg); color:var(--ink);
+    font:15px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,
+         "Noto Sans","Noto Sans Devanagari","Nirmala UI",Arial,sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+  a{color:inherit}
+  button{font:inherit;cursor:pointer}
+  .wrap{max-width:1060px;margin:0 auto;padding:0 20px}
+
+  /* ---------------- top bar ---------------- */
+  .nav{
+    background:var(--panel); border-bottom:1px solid var(--line);
+    position:sticky; top:0; z-index:40;
+  }
+  .nav-in{display:flex;align-items:center;justify-content:space-between;height:60px}
+  .logo{display:flex;align-items:center;gap:9px;font-weight:800;font-size:19px;letter-spacing:-.02em}
+  .logo svg{flex-shrink:0}
+  .nav-right{display:flex;align-items:center;gap:6px}
+  .nav-btn{
+    background:none;border:1px solid transparent;color:var(--muted);
+    padding:7px 12px;border-radius:9px;font-size:14px;
+  }
+  .nav-btn:hover{background:var(--chip);color:var(--ink)}
+  .chip-trials{
+    display:inline-flex;align-items:center;gap:6px;
+    background:var(--chip);border:1px solid var(--line);
+    padding:6px 12px;border-radius:999px;font-size:12.5px;font-weight:600;
+  }
+  .chip-trials.pro{background:rgba(16,185,129,.12);border-color:rgba(16,185,129,.35);color:#059669}
+  .chip-trials.out{background:rgba(239,68,68,.10);border-color:rgba(239,68,68,.35);color:#dc2626}
+
+  /* ---------------- hero ---------------- */
+  .hero{
+    background:linear-gradient(120deg,#7c3aed 0%,#9333ea 38%,#c026d3 68%,#ec4899 100%);
+    padding:26px 0 78px; position:relative; overflow:hidden;
+  }
+  .pills{display:flex;gap:1px;justify-content:center;flex-wrap:wrap;margin-bottom:28px}
+  .pill{
+    display:inline-flex;align-items:center;gap:7px;
+    background:rgba(255,255,255,.16);border:none;color:#fff;
+    padding:10px 20px;font-size:13.5px;font-weight:500;
+  }
+  .pill:first-child{border-radius:9px 0 0 9px}
+  .pill:last-child{border-radius:0 9px 9px 0}
+  .pill:hover{background:rgba(255,255,255,.26)}
+  .pill.on{background:#fff;color:#7c3aed;font-weight:700}
+  .hero h1{
+    text-align:center;color:#fff;font-size:clamp(30px,5vw,46px);
+    font-weight:800;letter-spacing:-.025em;margin:0 0 10px;
+    text-shadow:0 2px 18px rgba(0,0,0,.16);
+  }
+  .hero p.sub{text-align:center;color:rgba(255,255,255,.93);font-size:16px;margin:0 0 30px}
+
+  .searchbar{
+    display:flex;align-items:center;gap:8px;background:#fff;
+    border-radius:12px;padding:8px;max-width:690px;margin:0 auto;
+    box-shadow:0 12px 34px rgba(0,0,0,.20);
+  }
+  .searchbar input{
+    flex:1;border:none;outline:none;background:transparent;
+    padding:12px 14px;font-size:15.5px;color:#141220;min-width:0;
+  }
+  .searchbar input::placeholder{color:#9b96ad}
+  .btn-paste{
+    display:inline-flex;align-items:center;gap:7px;background:#f3f2f8;
+    border:1px solid #e4e1ef;color:#3f3a55;padding:11px 15px;border-radius:9px;
+    font-size:14px;font-weight:500;white-space:nowrap;
+  }
+  .btn-paste:hover{background:#eae7f5}
+  .btn-go{
+    display:inline-flex;align-items:center;gap:8px;border:none;color:#fff;
+    background:linear-gradient(135deg,#2563eb,#4f46e5);
+    padding:12px 24px;border-radius:9px;font-size:15px;font-weight:600;white-space:nowrap;
+  }
+  .btn-go:hover{filter:brightness(1.08)}
+  .btn-go:disabled{opacity:.6;cursor:default;filter:none}
+
+  /* the two icon actions under the search bar */
+  .actions{display:flex;gap:12px;justify-content:center;margin:18px auto 0;flex-wrap:wrap}
+  .act{
+    display:inline-flex;align-items:center;gap:9px;
+    background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.42);
+    color:#fff;padding:11px 22px;border-radius:11px;font-size:14.5px;font-weight:600;
+    backdrop-filter:blur(6px);
+  }
+  .act:hover{background:rgba(255,255,255,.27)}
+  .act:disabled{opacity:.5;cursor:default}
+  .act.solid{background:#fff;color:#7c3aed;border-color:#fff}
+  .act.solid:hover{background:#f6f2ff}
+  .hint{text-align:center;color:rgba(255,255,255,.86);font-size:12.5px;margin-top:14px}
+  .langrow{
+    display:flex;align-items:center;gap:9px;justify-content:center;margin-top:16px;
+    color:rgba(255,255,255,.92);font-size:13px;
+  }
+  .langrow label{margin:0;color:inherit;font-size:13px}
+  .langrow select{
+    background:rgba(255,255,255,.16);border:1px solid rgba(255,255,255,.42);
+    color:#fff;padding:7px 12px;border-radius:9px;font-size:13.5px;font-weight:500;
+    outline:none;cursor:pointer;backdrop-filter:blur(6px);
+  }
+  .langrow select option{background:#3b1e6e;color:#fff}
+
+
+  .watermark{
+    display:flex;align-items:center;justify-content:center;gap:16px;
+    margin-top:46px;opacity:.34;user-select:none;
+  }
+  .watermark span{color:#fff;font-size:clamp(34px,7vw,68px);font-weight:800;letter-spacing:-.03em}
+
+  /* ---------------- results ---------------- */
+  main{padding:34px 0 70px}
+  .card{
+    background:var(--panel);border:1px solid var(--line);border-radius:16px;
+    box-shadow:var(--shadow);overflow:hidden;margin-bottom:20px;
+  }
+  .vidrow{display:flex;gap:16px;padding:16px;border-bottom:1px solid var(--line);align-items:center}
+  .vidrow img{width:150px;height:84px;object-fit:cover;border-radius:10px;flex-shrink:0;background:var(--chip)}
+  .vidrow .t{font-weight:700;font-size:15.5px;line-height:1.35;margin-bottom:5px}
+  .vidrow .m{color:var(--muted);font-size:12.5px;display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+  .tag{background:var(--chip);border:1px solid var(--line);border-radius:999px;padding:2px 10px;font-size:11.5px}
+
+  .toolbar{display:flex;gap:9px;padding:13px 16px;flex-wrap:wrap;border-bottom:1px solid var(--line)}
+  /* Every action gets its own colour so the row is scannable at a glance.
+     Each gradient is dark enough at BOTH ends to keep white text readable
+     (>= 4.5:1) - a pretty pastel that you cannot read is not prettier. */
+  .tool{
+    display:inline-flex;align-items:center;gap:7px;
+    border:none;color:#fff;padding:9px 15px;
+    border-radius:10px;font-size:13px;font-weight:600;
+    box-shadow:0 2px 8px rgba(20,10,50,.16);
+    transition:transform .12s ease, box-shadow .12s ease, filter .12s ease;
+  }
+  .tool:hover{filter:brightness(1.09);transform:translateY(-1px);box-shadow:0 5px 14px rgba(20,10,50,.24)}
+  .tool:active{transform:translateY(0)}
+  .tool:disabled{opacity:.45;cursor:default;filter:none;transform:none;box-shadow:none}
+  .tool svg{opacity:.95}
+
+  .t-copy   {background:linear-gradient(135deg,#4338ca,#4f46e5)}   /* indigo  */
+  .t-pdf    {background:linear-gradient(135deg,#6d28d9,#9333ea)}   /* purple  */
+  .t-notes  {background:linear-gradient(135deg,#be185d,#db2777)}   /* rose    */
+  .t-md     {background:linear-gradient(135deg,#0f766e,#0d9488)}   /* teal    */
+  .t-youtube{background:linear-gradient(135deg,#b91c1c,#dc2626)}   /* red     */
+  .t-lang   {background:linear-gradient(135deg,#0369a1,#0284c7)}   /* sky     */
+
+  select.tool{
+    appearance:none;-webkit-appearance:none;
+    padding-right:34px;cursor:pointer;outline:none;
+    background-image:
+      url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='white'><path d='M7 10l5 5 5-5z'/></svg>"),
+      linear-gradient(135deg,#0369a1,#0284c7);
+    background-repeat:no-repeat, no-repeat;
+    background-position:right 11px center, center;
+    background-size:12px 12px, cover;
+  }
+  select.tool option{background:#0b1a2b;color:#fff;font-weight:500}
+
+  .body{padding:20px 22px 26px}
+  .md h1,.md h2,.md h3{line-height:1.3;margin:20px 0 8px;font-weight:750}
+  .md h1{font-size:21px}
+  .md h2{
+    font-size:17px;color:var(--brand1);padding-left:11px;
+    border-left:4px solid var(--brand2);
+  }
+  [data-theme="dark"] .md h2{color:#c4a5ff}
+  .md h3{font-size:15px;color:var(--muted)}
+  .md p{margin:9px 0}
+  .md ul,.md ol{margin:8px 0 12px;padding-left:22px}
+  .md li{margin:5px 0}
+  .md strong{font-weight:700}
+  .md:first-child > :first-child{margin-top:0}
+
+  .progress{height:6px;background:var(--chip);border-radius:99px;overflow:hidden;margin:0 0 14px}
+  .progress > i{display:block;height:100%;width:0;background:linear-gradient(90deg,var(--brand1),var(--brand3));transition:width .3s}
+  .status{color:var(--muted);font-size:13px;display:flex;align-items:center;gap:9px}
+  .spin{
+    width:15px;height:15px;border:2px solid var(--line);border-top-color:var(--brand2);
+    border-radius:50%;animation:spin .8s linear infinite;flex-shrink:0;
+  }
+  @keyframes spin{to{transform:rotate(360deg)}}
+  .cursor{display:inline-block;width:7px;height:15px;background:var(--brand2);
+    vertical-align:-2px;animation:blink 1s steps(2) infinite}
+  @keyframes blink{50%{opacity:0}}
+
+  .note{
+    border-radius:12px;padding:13px 15px;font-size:13.5px;line-height:1.55;
+    border:1px solid;margin-bottom:18px;
+  }
+  .note.err{background:rgba(239,68,68,.08);border-color:rgba(239,68,68,.35);color:#dc2626}
+  .note.warn{background:rgba(245,158,11,.10);border-color:rgba(245,158,11,.38);color:#b45309}
+  .note.info{background:rgba(124,58,237,.08);border-color:rgba(124,58,237,.30);color:var(--muted)}
+  .note.ok{background:rgba(16,185,129,.10);border-color:rgba(16,185,129,.35);color:#059669}
+  .note .linkbtn{background:none;border:none;color:var(--brand1);font-size:inherit;
+    text-decoration:underline;cursor:pointer;padding:0}
+  [data-theme="dark"] .note.info{color:#b8aee0}
+  [data-theme="dark"] .note.ok{color:#6ee7a8}
+  [data-theme="dark"] .note.err{color:#ff9d95}
+  [data-theme="dark"] .note.warn{color:#fbbf24}
+
+  /* ---------------- how it works / faq ---------------- */
+  .steps{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px;margin-top:8px}
+  .step{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:18px}
+  .step b{display:block;margin-bottom:5px;font-size:14.5px}
+  .step span{color:var(--muted);font-size:13.5px}
+  .num{
+    width:26px;height:26px;border-radius:8px;display:grid;place-items:center;
+    background:linear-gradient(135deg,var(--brand1),var(--brand3));color:#fff;
+    font-size:13px;font-weight:700;margin-bottom:10px;
+  }
+  h2.sec{font-size:20px;margin:34px 0 14px;font-weight:750}
+  details{border:1px solid var(--line);border-radius:12px;padding:13px 16px;margin-bottom:9px;background:var(--panel)}
+  details summary{cursor:pointer;font-weight:600;font-size:14.5px}
+  details p{color:var(--muted);font-size:13.5px;margin:9px 0 2px}
+  footer{border-top:1px solid var(--line);padding:22px 0;color:var(--muted);font-size:12.5px;text-align:center}
+
+  /* ---------------- auth modal ---------------- */
+  .overlay{
+    position:fixed;inset:0;background:rgba(12,8,30,.62);backdrop-filter:blur(3px);
+    display:grid;place-items:center;z-index:100;padding:20px;
+  }
+  .modal{
+    background:var(--panel);border:1px solid var(--line);border-radius:18px;
+    width:100%;max-width:390px;padding:24px;box-shadow:var(--shadow);
+  }
+  .modal h3{margin:0 0 4px;font-size:19px}
+  .modal .lead{color:var(--muted);font-size:13.5px;margin:0 0 16px}
+  .tabs{display:flex;gap:4px;border-bottom:1px solid var(--line);margin-bottom:14px}
+  .tabs button{
+    flex:1;background:none;border:none;border-bottom:2px solid transparent;
+    color:var(--muted);padding:9px;font-size:14px;
+  }
+  .tabs button.on{color:var(--brand1);border-bottom-color:var(--brand1);font-weight:650}
+  label{display:block;font-size:12px;color:var(--muted);margin:11px 0 5px}
+  .modal input{
+    width:100%;padding:11px 13px;border:1px solid var(--line);border-radius:10px;
+    background:var(--field);color:var(--ink);font-size:14.5px;outline:none;
+  }
+  .modal input:focus{border-color:var(--brand2)}
+  .btn-full{
+    width:100%;margin-top:16px;padding:12px;border:none;border-radius:10px;
+    background:linear-gradient(135deg,var(--brand1),var(--brand2));color:#fff;
+    font-size:15px;font-weight:650;
+  }
+  .btn-full:disabled{opacity:.6;cursor:default}
+  .msg{font-size:12.5px;margin-top:10px;min-height:16px;color:#dc2626}
+  .msg.ok{color:#059669}
+  .linkbtn{background:none;border:none;color:var(--brand1);font-size:12.5px;padding:8px 0}
+  .hidden{display:none!important}
+  .meter{height:6px;background:var(--chip);border-radius:99px;overflow:hidden;margin:12px 0 8px}
+
+  /* language picker */
+  .modal.picker{max-width:420px;display:flex;flex-direction:column;max-height:78vh}
+  .picker-head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}
+  .picker-head h3{margin:0 0 3px}
+  .pick-close{
+    background:none;border:none;color:var(--muted);font-size:24px;line-height:1;
+    cursor:pointer;padding:0 4px;
+  }
+  .pick-close:hover{color:var(--ink)}
+  #pickSearch{
+    width:100%;margin:12px 0 10px;padding:11px 13px;border:1px solid var(--line);
+    border-radius:10px;background:var(--field);color:var(--ink);font-size:14.5px;outline:none;
+  }
+  #pickSearch:focus{border-color:var(--brand2)}
+  .pick-list{overflow-y:auto;margin:0 -6px;padding:0 6px}
+  .pick-item{
+    display:flex;align-items:center;justify-content:space-between;gap:10px;
+    width:100%;text-align:left;background:none;border:1px solid transparent;
+    color:var(--ink);padding:10px 12px;border-radius:10px;font-size:14px;
+  }
+  .pick-item:hover{background:var(--chip);border-color:var(--line)}
+  .pick-item.suggested{
+    background:linear-gradient(135deg,var(--brand1),var(--brand2));color:#fff;
+    font-weight:600;margin-bottom:6px;
+  }
+  .pick-item.suggested:hover{filter:brightness(1.07)}
+  .pick-item .code{font-size:11px;opacity:.65;text-transform:uppercase}
+  .pick-empty{color:var(--muted);font-size:13px;padding:14px 12px}
+  .meter > i{display:block;height:100%;background:linear-gradient(90deg,var(--brand1),var(--brand3))}
+  @media(max-width:620px){
+    .vidrow{flex-direction:column;align-items:flex-start}
+    .vidrow img{width:100%;height:auto}
+    .searchbar{flex-wrap:wrap}
+    .searchbar input{flex-basis:100%}
+  }
+</style>
+</head>
+<body>
+
+<nav class="nav"><div class="wrap nav-in">
+  <div class="logo">
+    <svg width="28" height="28" viewBox="0 0 32 32"><rect width="32" height="32" rx="8" fill="url(#lg)"/><path d="M13 10l9 6-9 6z" fill="#fff"/><defs><linearGradient id="lg" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#7c3aed"/><stop offset="1" stop-color="#ec4899"/></linearGradient></defs></svg>
+    <span>TubeNotes</span>
+  </div>
+  <div class="nav-right">
+    <span id="trialChip" class="chip-trials hidden"></span>
+    <button class="nav-btn" onclick="document.getElementById('faq').scrollIntoView({behavior:'smooth'})">FAQ</button>
+    <button class="nav-btn" id="themeBtn" title="Toggle theme">🌙</button>
+    <button class="nav-btn" id="accountBtn">Sign in</button>
+  </div>
+</div></nav>
+
+<header class="hero">
+  <div class="wrap">
+    <div class="pills" id="pills">
+      <button class="pill on" data-mode="summary">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l2.2 5.8L20 10l-5.8 2.2L12 18l-2.2-5.8L4 10l5.8-2.2z"/></svg>
+        Summary</button>
+      <button class="pill" data-mode="key_points">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M4 5h2v2H4zM8 5h12v2H8zM4 11h2v2H4zM8 11h12v2H8zM4 17h2v2H4zM8 17h12v2H8z"/></svg>
+        Key Points</button>
+      <button class="pill" data-mode="notes">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M6 2h9l5 5v15H6zM14 3v5h5"/></svg>
+        Full Notes</button>
+      <button class="pill" data-mode="transcript">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M3 5h18v2H3zm0 4h13v2H3zm0 4h18v2H3zm0 4h10v2H3z"/></svg>
+        Transcript</button>
+    </div>
+
+    <h1>YouTube Summarizer</h1>
+    <p class="sub">Summary, key points &amp; PDF notes — in the video's own language</p>
+
+    <div class="searchbar">
+      <input id="url" type="url" placeholder="Insert YouTube link here"
+             autocomplete="off" spellcheck="false" />
+      <button class="btn-paste" id="pasteBtn">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+        Paste
+      </button>
+      <button class="btn-go" id="goBtn">Summarize</button>
+    </div>
+
+    <div class="actions">
+      <button class="act solid" id="summaryBtn">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l2.2 5.8L20 10l-5.8 2.2L12 18l-2.2-5.8L4 10l5.8-2.2zM19 15l.9 2.4L22 18l-2.1.6L19 21l-.9-2.4L16 18l2.1-.6z"/></svg>
+        Get Summary
+      </button>
+      <button class="act" id="pdfBtn">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg>
+        Download the PDF
+      </button>
+    </div>
+
+    <div class="langrow">
+      <label for="outLang">Summary language</label>
+      <select id="outLang" title="Which language should the summary be written in?">
+        <option value="auto">Same as the video</option>
+      </select>
+    </div>
+
+    <p class="hint" id="heroHint">5 free videos on signup · then $5/month · works with Hindi, English &amp; 40+ languages</p>
+
+    <div class="watermark">
+      <svg width="70" height="70" viewBox="0 0 32 32"><rect width="32" height="32" rx="8" fill="none" stroke="#fff" stroke-width="2.2"/><path d="M13 10l9 6-9 6z" fill="#fff"/></svg>
+      <span>TubeNotes</span>
+    </div>
+  </div>
+</header>
+
+<main class="wrap">
+  <div id="result" class="hidden"></div>
+
+  <section id="how">
+    <h2 class="sec">How it works</h2>
+    <div class="steps">
+      <div class="step"><div class="num">1</div><b>Paste the link</b><span>Any youtube.com, youtu.be or /shorts link works.</span></div>
+      <div class="step"><div class="num">2</div><b>We read the captions</b><span>The video's subtitle track is fetched and cleaned — no download, no waiting for audio.</span></div>
+      <div class="step"><div class="num">3</div><b>AI writes in the same language</b><span>A Hindi video gets Hindi notes, Tamil gets Tamil. Nothing is force-translated to English.</span></div>
+      <div class="step"><div class="num">4</div><b>Read or save as PDF</b><span>Full notes open in a print-ready page — choose "Save as PDF".</span></div>
+    </div>
+  </section>
+
+  <section id="faq">
+    <h2 class="sec">FAQ</h2>
+    <details><summary>Which languages work?</summary>
+      <p>Whatever the video is spoken in. Hindi, English, Marathi, Gujarati, Tamil, Telugu, Kannada, Malayalam, Bengali, Punjabi, Urdu, plus Spanish, French, German, Arabic and more. Regional Indian languages are routed to an Indic-tuned model, because general models drift back into English on those.</p></details>
+    <details><summary>Why does a video sometimes fail?</summary>
+      <p>The video has no subtitle track at all (some music and vlog uploads), subtitles are disabled by the creator, or the video is private/age-restricted. Occasionally YouTube rate-limits the server, in which case waiting a minute usually fixes it.</p></details>
+    <details><summary>How does the free trial count?</summary>
+      <p>One video = one credit. The summary, the key points and the PDF notes for that same video are all covered by it, and re-opening a video you already did is free forever. Free accounts get 5 videos.</p></details>
+    <details><summary>Do you store my videos?</summary>
+      <p>We store the video id and when you summarized it, so re-runs stay free and so we can count credits. Transcripts and summaries are not kept on the server after the response is sent.</p></details>
+    <details><summary>Long videos?</summary>
+      <p>Yes. For the on-screen summary a long transcript is sampled across the whole video so the beginning, middle and end are all represented. "Full Notes" reads the entire transcript chunk by chunk — slower, but nothing is dropped.</p></details>
+  </section>
+</main>
+
+<footer class="wrap">TubeNotes — YouTube summaries in your language.</footer>
+
+<!-- ---------------- language picker (for the PDF buttons) ---------------- -->
+<div class="overlay hidden" id="langPicker">
+  <div class="modal picker">
+    <div class="picker-head">
+      <div>
+        <h3 id="pickTitle">Choose the PDF language</h3>
+        <p class="lead" id="pickLead">The notes and the PDF will be written in this language.</p>
+      </div>
+      <button class="pick-close" id="pickClose" title="Close">&times;</button>
+    </div>
+    <input id="pickSearch" type="search" placeholder="Search a language…" autocomplete="off" />
+    <div class="pick-list" id="pickList"></div>
+  </div>
+</div>
+
+<!-- ---------------- auth modal ---------------- -->
+<div class="overlay hidden" id="authModal">
+  <div class="modal">
+    <div id="authPane">
+      <h3 id="authTitle">Welcome back</h3>
+      <p class="lead" id="authLead">Sign in to keep your credits and history.</p>
+      <div class="tabs">
+        <button id="tabIn" class="on">Sign in</button>
+        <button id="tabUp">Create account</button>
+      </div>
+      <form id="authForm">
+        <div id="nameWrap" class="hidden">
+          <label for="fullName">Name</label>
+          <input id="fullName" type="text" autocomplete="name" />
+        </div>
+        <label for="email">Email</label>
+        <input id="email" type="email" autocomplete="email" required />
+        <label for="password">Password</label>
+        <input id="password" type="password" autocomplete="current-password" required minlength="8" />
+        <div class="msg" id="authMsg"></div>
+        <button class="btn-full" id="authSubmit" type="submit">Sign in</button>
+      </form>
+      <div style="display:flex;justify-content:space-between">
+        <button class="linkbtn" id="forgotBtn">Forgot password?</button>
+        <button class="linkbtn" id="closeAuth">Close</button>
+      </div>
+    </div>
+
+    <div id="acctPane" class="hidden">
+      <h3>Your account</h3>
+      <p class="lead" id="acctEmail"></p>
+      <div style="font-weight:700;font-size:17px" id="acctStatus">—</div>
+      <div class="meter"><i id="acctMeter" style="width:0"></i></div>
+      <p class="lead" id="acctDetail" style="margin-bottom:0"></p>
+      <button class="btn-full" id="upgradeBtn">Subscribe — $5/month</button>
+      <div class="msg" id="acctMsg"></div>
+      <div style="display:flex;justify-content:space-between">
+        <button class="linkbtn" id="signoutBtn">Sign out</button>
+        <button class="linkbtn" id="closeAcct">Close</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="/static/app.js"></script>
+</body>
+</html>

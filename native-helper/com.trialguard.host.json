@@ -1,0 +1,7 @@
+{
+  "name": "com.trialguard.host",
+  "description": "Reports the machine MAC address to the TrialGuard extension",
+  "path": "/absolute/path/to/trialguard_host.py",
+  "type": "stdio",
+  "allowed_origins": ["chrome-extension://YOUR_EXTENSION_ID_HERE/"]
+}

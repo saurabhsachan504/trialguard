@@ -1,0 +1,68 @@
+# Production stack for the DGX.
+#
+#   docker compose -f docker-compose.prod.yml up -d --build
+#
+# Two deliberate differences from docker-compose.yml (the dev one):
+#
+# 1. Nothing is published to the public internet. The API is bound to
+#    127.0.0.1:8000 on the host, so ONLY something running on the DGX itself -
+#    i.e. aaPanel's Nginx - can reach it. Nginx terminates HTTPS and forwards.
+#    If we published 0.0.0.0:8000 the API would also answer on
+#    http://<dgx-ip>:8000 with no TLS, and every token would travel in clear.
+#
+# 2. Postgres publishes no port at all. The API reaches it over the private
+#    compose network by the hostname "db". A database open to the internet is
+#    how these things get wiped.
+#
+# restart: unless-stopped means the containers come back by themselves after a
+# reboot or a crash. That is what makes this survive your laptop being off -
+# nothing here depends on your machine.
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: trialguard
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: trialguard
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U trialguard"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  api:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+psycopg://trialguard:${POSTGRES_PASSWORD}@db:5432/trialguard
+    depends_on:
+      db:
+        condition: service_healthy
+    # Lets the container reach Ollama running on the DGX itself, so you can set
+    # OLLAMA_URL=http://host.docker.internal:11434 instead of going out to the
+    # public https://ollama.trueworks.in and straight back in.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      # host-only. Nginx proxies to this.
+      - "127.0.0.1:8000:8000"
+    # alembic upgrade head runs on every start: a new build applies its own
+    # migrations before serving, so a deploy never leaves the schema behind.
+    command: >
+      sh -c "alembic upgrade head &&
+             uvicorn app.main:app --host 0.0.0.0 --port 8000
+                    --workers 2 --proxy-headers --forwarded-allow-ips='*'"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8000/healthz || exit 1"]
+      interval: 30s
+      timeout: 5s
+      start_period: 40s
+      retries: 3
+
+volumes:
+  pgdata:

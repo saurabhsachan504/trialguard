@@ -1,0 +1,26 @@
+{
+  "_comment": "Merge these keys into your existing manifest.json (MV3).",
+
+  "manifest_version": 3,
+  "version": "1.0.0",
+
+  "permissions": ["storage", "alarms", "notifications"],
+
+  "_host_permissions_comment": "Replace with your deployed API origin. Without this the extension cannot call the backend.",
+  "host_permissions": ["http://localhost:8000/*", "https://api.yourdomain.com/*"],
+
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Account"
+  },
+
+  "background": {
+    "service_worker": "background.js",
+    "_type_comment": "type:module is required because the client files use ES imports",
+    "type": "module"
+  },
+
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self'"
+  }
+}

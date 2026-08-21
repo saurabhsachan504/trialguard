@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Account</title>
+    <style>
+      :root {
+        --bg: #ffffff;
+        --fg: #1f1f1f;
+        --muted: #5f6368;
+        --line: #e0e0e0;
+        --accent: #1a73e8;
+        --danger: #d93025;
+        --ok: #188038;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #202124;
+          --fg: #e8eaed;
+          --muted: #9aa0a6;
+          --line: #3c4043;
+        }
+      }
+      * { box-sizing: border-box; }
+      body {
+        width: 320px;
+        margin: 0;
+        padding: 16px;
+        font: 14px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+        background: var(--bg);
+        color: var(--fg);
+      }
+      h1 { font-size: 16px; margin: 0 0 12px; }
+      label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 4px; }
+      input {
+        width: 100%; padding: 8px 10px; margin-bottom: 10px; font-size: 14px;
+        border: 1px solid var(--line); border-radius: 6px;
+        background: transparent; color: var(--fg);
+      }
+      button {
+        width: 100%; padding: 9px 12px; font-size: 14px; font-weight: 500;
+        border: 0; border-radius: 6px; cursor: pointer;
+        background: var(--accent); color: #fff;
+      }
+      button.secondary { background: transparent; color: var(--accent); font-weight: 400; }
+      button:disabled { opacity: .6; cursor: default; }
+      .row { display: flex; gap: 8px; }
+      .muted { color: var(--muted); font-size: 12px; }
+      .error { color: var(--danger); font-size: 12px; margin: 6px 0; min-height: 16px; }
+      .hidden { display: none; }
+      .meter { height: 6px; background: var(--line); border-radius: 3px; overflow: hidden; margin: 8px 0; }
+      .meter > span { display: block; height: 100%; background: var(--accent); }
+      .card { border: 1px solid var(--line); border-radius: 8px; padding: 12px; margin-bottom: 12px; }
+      .badge { font-size: 11px; padding: 2px 8px; border-radius: 999px; background: var(--line); }
+      .badge.pro { background: var(--ok); color: #fff; }
+      .tabs { display: flex; gap: 4px; margin-bottom: 12px; border-bottom: 1px solid var(--line); }
+      .tabs button {
+        flex: 1; background: transparent; color: var(--muted);
+        border-bottom: 2px solid transparent; border-radius: 0; padding: 8px;
+      }
+      .tabs button.active { color: var(--accent); border-bottom-color: var(--accent); }
+    </style>
+  </head>
+  <body>
+    <!-- Signed out -->
+    <section id="auth-view">
+      <h1>Sign in to continue</h1>
+      <div class="tabs">
+        <button id="tab-login" class="active">Sign in</button>
+        <button id="tab-signup">Create account</button>
+      </div>
+
+      <form id="auth-form">
+        <div id="name-field" class="hidden">
+          <label for="fullName">Name</label>
+          <input id="fullName" type="text" autocomplete="name" />
+        </div>
+        <label for="email">Email</label>
+        <input id="email" type="email" autocomplete="email" required />
+        <label for="password">Password</label>
+        <input id="password" type="password" autocomplete="current-password" required minlength="8" />
+        <p class="error" id="auth-error"></p>
+        <button id="auth-submit" type="submit">Sign in</button>
+      </form>
+      <p class="muted" id="signup-hint">
+        New accounts get 5 free runs on this device.
+      </p>
+      <button class="secondary" id="forgot">Forgot password?</button>
+    </section>
+
+    <!-- Signed in -->
+    <section id="account-view" class="hidden">
+      <h1>
+        Your account
+        <span class="badge" id="plan-badge">Free</span>
+      </h1>
+
+      <div class="card">
+        <div id="email-line" class="muted"></div>
+        <div id="status-line" style="margin-top:6px;font-weight:500"></div>
+        <div class="meter"><span id="meter-fill" style="width:0%"></span></div>
+        <div class="muted" id="detail-line"></div>
+      </div>
+
+      <button id="upgrade">Subscribe &mdash; $5/month</button>
+      <p class="error" id="account-error"></p>
+      <div class="row">
+        <button class="secondary" id="manage">Manage billing</button>
+        <button class="secondary" id="signout">Sign out</button>
+      </div>
+    </section>
+
+    <script type="module" src="popup.js"></script>
+  </body>
+</html>
