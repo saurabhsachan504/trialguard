@@ -50,7 +50,7 @@ services:
       - "host.docker.internal:host-gateway"
     ports:
       # host-only. Nginx proxies to this.
-      - "127.0.0.1:8000:8000"
+      - "127.0.0.1:8001:8000"
     # alembic upgrade head runs on every start: a new build applies its own
     # migrations before serving, so a deploy never leaves the schema behind.
     command: >

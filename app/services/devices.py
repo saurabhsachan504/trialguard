@@ -131,12 +131,16 @@ def register_device(
             .where(Device.user_id == user.id, Device.revoked.is_(False))
         ).scalar_one()
         subscribed = user.active_subscription() is not None
+        # Owner/team accounts are exempt: they have to be able to test from the
+        # extension, the web app and a second browser without hitting a cap
+        # meant for ordinary free users.
+        owner = user.email.lower() in settings.unlimited_emails
         max_devices = (
             settings.MAX_DEVICES_PER_PAID_USER
             if subscribed
             else settings.MAX_DEVICES_PER_FREE_USER
         )
-        if existing >= max_devices:
+        if not owner and existing >= max_devices:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail=(

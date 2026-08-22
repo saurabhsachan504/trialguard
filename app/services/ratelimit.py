@@ -19,12 +19,21 @@ def _now() -> datetime:
 
 
 def client_ip(request: Request) -> str:
-    # X-Forwarded-For is attacker-controlled unless a proxy you control
-    # overwrites it, so it is only trusted when explicitly enabled.
+    # Behind Cloudflare, X-Forwarded-For is NOT safe to read from the left:
+    # Cloudflare *appends* the real client IP to whatever chain the client
+    # sent, so the leftmost entry is attacker-chosen. Anyone could send
+    # "X-Forwarded-For: 1.2.3.4" and get a fresh rate-limit bucket per request.
+    #
+    # CF-Connecting-IP is written by Cloudflare itself and cannot be spoofed,
+    # so prefer it. Without it, fall back to the RIGHTMOST X-Forwarded-For
+    # entry - the one the closest trusted proxy added.
     if settings.TRUST_PROXY_HEADERS:
+        cf = request.headers.get("cf-connecting-ip")
+        if cf:
+            return cf.strip()[:64]
         forwarded = request.headers.get("x-forwarded-for")
         if forwarded:
-            return forwarded.split(",")[0].strip()[:64]
+            return forwarded.split(",")[-1].strip()[:64]
     return (request.client.host if request.client else "unknown")[:64]
 
 

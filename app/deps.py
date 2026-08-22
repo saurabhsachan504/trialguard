@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from app.config import settings
 from app.database import get_db
 from app.models import User
-from app.security import decode_access_token
+from app.security import constant_time_equals, decode_access_token
 from app.services.ratelimit import client_ip
 
 bearer_scheme = HTTPBearer(auto_error=False)
@@ -49,7 +49,13 @@ def get_current_user(
 def get_admin_user(
     x_admin_key: str | None = Header(default=None, alias="X-Admin-Key"),
 ) -> None:
-    if not settings.ADMIN_API_KEY or x_admin_key != settings.ADMIN_API_KEY:
+    # Constant-time compare so the endpoint cannot be used as an oracle that
+    # leaks the key one character at a time.
+    if (
+        not settings.ADMIN_API_KEY
+        or not x_admin_key
+        or not constant_time_equals(x_admin_key, settings.ADMIN_API_KEY)
+    ):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
 
 
