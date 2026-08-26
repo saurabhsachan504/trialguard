@@ -80,6 +80,13 @@ class User(TimestampMixin, Base):
     # Always stored lower-cased; uniqueness is therefore case-insensitive.
     email: Mapped[str] = mapped_column(String(320), unique=True, index=True, nullable=False)
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
+    # Google ki sthaayi user id. Google se aane walon ke liye bharti hai,
+    # baaki sabke liye NULL - purane rows ko koi farak nahi padta.
+    google_sub: Mapped[str | None] = mapped_column(
+        String(64), unique=True, index=True
+    )
+    # "password" | "google" | "google+password" - sirf jaankari ke liye.
+    auth_provider: Mapped[str | None] = mapped_column(String(24), default="password")
     full_name: Mapped[str | None] = mapped_column(String(120))
 
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)

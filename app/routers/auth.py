@@ -1,6 +1,7 @@
 """Signup, login, token refresh, email verification and password reset."""
 from __future__ import annotations
 
+import secrets
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
@@ -21,6 +22,7 @@ from app.schemas import (
     AuthResponse,
     DeviceOut,
     EmailRequest,
+    GoogleLoginRequest,
     LoginRequest,
     LogoutRequest,
     MessageOut,
@@ -42,6 +44,7 @@ from app.security import (
     verify_password,
 )
 from app.services import devices as device_service
+from app.services import google_auth
 from app.services import email as email_service
 from app.services import entitlements, ratelimit
 
@@ -137,6 +140,105 @@ def signup(
     )
     tokens = _issue_tokens(db, user, device.device_hash)
     _send_verification(db, user)
+    ent = entitlements.build_entitlement(db, user, device.device_hash, machine_hash)
+
+    db.commit()
+    db.refresh(user)
+    return AuthResponse(
+        user=UserOut.model_validate(user),
+        tokens=tokens,
+        device_id=device.id,
+        entitlement=ent,
+    )
+
+
+@router.post("/google", response_model=AuthResponse)
+def google_login(
+    payload: GoogleLoginRequest,
+    db: Session = Depends(get_db),
+    ip: str = Depends(get_client_ip),
+):
+    """Sign in (aur zaroorat ho to signup) ek hi Google click me.
+
+    Purane password wale raaste ko ye chhuta nahi. Feature band ho to 404.
+    """
+    if not settings.GOOGLE_LOGIN_ENABLED:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
+
+    ratelimit.hit(
+        db,
+        f"google:ip:{ip}",
+        limit=settings.SIGNUP_RATE_LIMIT * 4,
+        window_seconds=settings.SIGNUP_RATE_WINDOW_SECONDS,
+    )
+
+    try:
+        identity = google_auth.verify_id_token(payload.credential)
+    except google_auth.GoogleAuthError as exc:
+        db.commit()
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(exc))
+
+    # Bina verified email ke jodna khatarnak hai: koi bhi kisi aur ki email
+    # apne Google account par daalkar uske account me ghus sakta hai.
+    if not identity.email_verified:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Your Google account's email is not verified.",
+        )
+
+    device_hash = device_service.fingerprint_to_hash(payload.device)
+    machine_hash = device_service.fingerprint_to_machine_hash(payload.device)
+
+    user = db.execute(
+        select(User).where(User.google_sub == identity.sub)
+    ).scalar_one_or_none()
+    new_account = False
+
+    if user is None:
+        # Pehli baar. Wahi email password se bani ho to usi account se jod do.
+        user = db.execute(
+            select(User).where(User.email == identity.email)
+        ).scalar_one_or_none()
+
+        if user is not None:
+            user.google_sub = identity.sub
+            user.auth_provider = "google+password"
+            user.email_verified = True
+        else:
+            device_service.assert_device_may_register_account(
+                db, device_hash, machine_hash
+            )
+            user = User(
+                email=identity.email,
+                # Ye password koi nahi jaanega (hum bhi nahi), isliye password
+                # login is account par kabhi safal nahi hoga.
+                password_hash=hash_password(secrets.token_urlsafe(48)),
+                full_name=identity.name,
+                signup_ip=ip,
+                google_sub=identity.sub,
+                auth_provider="google",
+                email_verified=True,
+            )
+            db.add(user)
+            new_account = True
+            try:
+                db.flush()
+            except IntegrityError:
+                db.rollback()
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="An account with this email already exists.",
+                )
+
+    if not user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="Account disabled"
+        )
+
+    device = device_service.register_device(
+        db, user, payload.device, ip=ip, new_account=new_account
+    )
+    tokens = _issue_tokens(db, user, device.device_hash)
     ent = entitlements.build_entitlement(db, user, device.device_hash, machine_hash)
 
     db.commit()

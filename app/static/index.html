@@ -430,6 +430,14 @@
     <div id="authPane">
       <h3 id="authTitle">Welcome back</h3>
       <p class="lead" id="authLead">Sign in to keep your credits and history.</p>
+      <div id="googleWrap" class="hidden">
+        <div id="gsiButton"></div>
+        <div class="msg" id="googleMsg"></div>
+        <div style="text-align:center;margin:.7rem 0 .2rem">
+          <button class="linkbtn" id="showPwd" type="button">or use email &amp; password</button>
+        </div>
+      </div>
+      <div id="pwdWrap">
       <div class="tabs">
         <button id="tabIn" class="on">Sign in</button>
         <button id="tabUp">Create account</button>
@@ -446,6 +454,7 @@
         <div class="msg" id="authMsg"></div>
         <button class="btn-full" id="authSubmit" type="submit">Sign in</button>
       </form>
+      </div>
       <div style="display:flex;justify-content:space-between">
         <button class="linkbtn" id="forgotBtn">Forgot password?</button>
         <button class="linkbtn" id="closeAuth">Close</button>
@@ -468,6 +477,7 @@
   </div>
 </div>
 
+<script src="https://accounts.google.com/gsi/client" async defer></script>
 <script src="/static/app.js"></script>
 </body>
 </html>

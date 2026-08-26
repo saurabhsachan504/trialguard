@@ -926,8 +926,69 @@ ${standalone ? '<scr' + 'ipt>setTimeout(function(){window.print()},450)</scr' + 
     } finally { $("upgradeBtn").disabled = false; }
   };
 
+  // ---- Google sign-in -------------------------------------------------
+  // Server /meta se batata hai ki feature chaalu hai ya nahi. Band ho to
+  // yahan se aage kuch hota hi nahi aur purana form jaisa tha waisa rehta hai.
+  async function initGoogle() {
+    let meta;
+    try { meta = await fetch(API + "/meta").then((r) => r.json()); }
+    catch (_) { return; }
+    if (!meta.google_login || !meta.google_client_id) return;
+
+    // Google ka script async load hota hai - taiyaar hone ka intezaar.
+    for (let i = 0; i < 40 && !(window.google && google.accounts && google.accounts.id); i++) {
+      await new Promise((r) => setTimeout(r, 150));
+    }
+    if (!(window.google && google.accounts && google.accounts.id)) return;
+
+    google.accounts.id.initialize({
+      client_id: meta.google_client_id,
+      callback: onGoogleCredential,
+      auto_select: false,
+      cancel_on_tap_outside: true,
+    });
+    google.accounts.id.renderButton($("gsiButton"), {
+      theme: document.documentElement.dataset.theme === "dark" ? "filled_black" : "outline",
+      size: "large",
+      width: 280,
+      text: "continue_with",
+      shape: "pill",
+    });
+
+    $("googleWrap").classList.remove("hidden");
+    // Password wala form chhupa dete hain - link se kabhi bhi khul jaata hai.
+    $("pwdWrap").classList.add("hidden");
+  }
+
+  async function onGoogleCredential(resp) {
+    const msg = $("googleMsg");
+    msg.textContent = "Signing you in\u2026";
+    msg.className = "msg";
+    try {
+      const data = await api("/auth/google", {
+        auth: false,
+        method: "POST",
+        body: { credential: resp.credential, device: device() },
+      });
+      tokens.set(data.tokens);
+      paintChip(data.entitlement);
+      closeModal();
+      if ($("url").value.trim()) run(mode);
+    } catch (e) {
+      msg.textContent = e.status === 429
+        ? "Too many attempts. Please wait a few minutes."
+        : (e.message || "Google sign-in failed.");
+      msg.className = "msg";
+    }
+  }
+
+  $("showPwd").onclick = () => {
+    $("pwdWrap").classList.toggle("hidden");
+  };
+
   // ---- boot ----
   fillLangSelect($("outLang"), { includeAuto: true });
+  initGoogle();
   try {
     const t = localStorage.getItem("tn_theme");
     if (t) { document.documentElement.dataset.theme = t; $("themeBtn").textContent = t === "dark" ? "☀️" : "🌙"; }

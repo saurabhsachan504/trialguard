@@ -60,6 +60,17 @@ class SignupRequest(BaseModel):
         return v.strip().lower()
 
 
+class GoogleLoginRequest(BaseModel):
+    """Google ka ID token + wahi device fingerprint jo normal signup bhejta hai.
+
+    Fingerprint isi request me aata hai, isliye trial ledgers bilkul waise hi
+    bharte hain jaise password wale signup me - koi chhoot nahi.
+    """
+
+    credential: str = Field(min_length=20, max_length=8192)
+    device: DeviceFingerprint
+
+
 class LoginRequest(BaseModel):
     email: EmailStr
     password: str = Field(min_length=1, max_length=200)

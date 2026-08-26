@@ -148,6 +148,14 @@ class Settings(BaseSettings):
 
     ADMIN_API_KEY: str = Field(default="", description="Static key for /admin routes")
 
+    # ---- Google sign-in --------------------------------------------------
+    # false rakhne par /auth/google 404 deta hai aur UI me button dikhta hi
+    # nahi - kuch bigde to .env me false karke up -d, bas.
+    GOOGLE_LOGIN_ENABLED: bool = False
+    # Google Cloud -> Credentials -> OAuth client ID (Web application).
+    # Client SECRET ki zaroorat NAHI hai.
+    GOOGLE_CLIENT_ID: str = ""
+
     @field_validator("SECRET_KEY", "DEVICE_HASH_SECRET")
     @classmethod
     def _no_default_secrets_in_prod(cls, v: str, info):  # pragma: no cover - guard

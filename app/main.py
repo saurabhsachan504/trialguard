@@ -113,6 +113,9 @@ def meta():
         "api": settings.API_PREFIX,
         "free_trials": settings.FREE_TRIAL_LIMIT,
         "price": f"${settings.PLAN_PRICE_CENTS / 100:.2f}/{settings.PLAN_INTERVAL}",
+        # Frontend ko batata hai ki Google button dikhana hai ya nahi.
+        "google_login": settings.GOOGLE_LOGIN_ENABLED and bool(settings.GOOGLE_CLIENT_ID),
+        "google_client_id": settings.GOOGLE_CLIENT_ID if settings.GOOGLE_LOGIN_ENABLED else "",
     }
 
 
