@@ -19,6 +19,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+import time
 from dataclasses import dataclass
 from urllib.parse import parse_qs, urlparse
 
@@ -213,6 +214,40 @@ def _parse_vtt(payload: str) -> str:
     return " ".join(deduped)
 
 
+_MAX_CAPTION_TRIES = 6
+
+
+def _caption_candidates(info: dict, manual: dict, auto: dict) -> list[str]:
+    """The few caption codes worth fetching, spoken language first.
+
+    yt-dlp reports the video's own language, and marks the original ASR track
+    with an "-orig" suffix. Either is reliable. The first key of the
+    automatic_captions dict is NOT - that is YouTube's translation menu in
+    alphabetical order, so it is always "ab".
+    """
+    spoken = (info.get("language") or "").split("-")[0].lower() or None
+    if not spoken:
+        orig = next((c for c in auto if c.endswith("-orig")), None)
+        if orig:
+            spoken = orig.split("-")[0].lower()
+
+    order: list[str] = []
+
+    def add(*codes: str) -> None:
+        for code in codes:
+            if code and code not in order and (code in manual or code in auto):
+                order.append(code)
+
+    if spoken:
+        add(f"{spoken}-orig")
+        add(*[c for c in manual if c.split("-")[0].lower() == spoken])
+        add(spoken)
+    add(*list(manual))
+    add(*[c for c in auto if c.endswith("-orig")])
+    add("en")
+    return order[:_MAX_CAPTION_TRIES]
+
+
 def _fetch_via_ytdlp(video_id: str) -> Transcript:
     import yt_dlp
 
@@ -232,34 +267,50 @@ def _fetch_via_ytdlp(video_id: str) -> Transcript:
 
     manual = info.get("subtitles") or {}
     auto = info.get("automatic_captions") or {}
+    order = _caption_candidates(info, manual, auto)
+    logger.info("yt-dlp caption order for %s: %s", video_id, order)
 
-    # Same spoken-language logic as above: the auto track defines the language.
-    spoken = None
-    for code in auto:
-        spoken = code.split("-")[0].lower()
-        break
-    order: list[str] = []
-    if spoken:
-        order += [c for c in manual if c.split("-")[0].lower() == spoken]
-        order += [c for c in auto if c.split("-")[0].lower() == spoken]
-    order += list(manual) + list(auto)
+    throttled = False
 
-    seen: set[str] = set()
-    for code in order:
-        if code in seen:
-            continue
-        seen.add(code)
-        formats = manual.get(code) or auto.get(code) or []
-        chosen = next(
-            (f for f in formats if f.get("ext") == "json3"),
-            next((f for f in formats if f.get("ext") in ("vtt", "srv1")), None),
-        )
-        if not chosen or not chosen.get("url"):
-            continue
-        try:
-            with httpx.Client(timeout=25, proxy=settings.YOUTUBE_PROXY or None) as client:
-                body = client.get(chosen["url"]).text
-            text = _parse_json3(body) if chosen["ext"] == "json3" else _parse_vtt(body)
+    with httpx.Client(timeout=25, proxy=settings.YOUTUBE_PROXY or None) as client:
+        for code in order:
+            formats = manual.get(code) or auto.get(code) or []
+            chosen = next(
+                (f for f in formats if f.get("ext") == "json3"),
+                next((f for f in formats if f.get("ext") in ("vtt", "srv1")), None),
+            )
+            if not chosen or not chosen.get("url"):
+                continue
+
+            body = None
+            for attempt in range(3):
+                try:
+                    res = client.get(chosen["url"])
+                except Exception as exc:
+                    logger.info("yt-dlp subtitle request failed (%s): %s", code, exc)
+                    break
+                if res.status_code == 429:
+                    throttled = True
+                    logger.info("yt-dlp subtitle 429 (%s), attempt %s", code, attempt + 1)
+                    if attempt < 2:
+                        time.sleep(2 + attempt * 3)
+                        continue
+                    break
+                if res.status_code != 200:
+                    logger.info("yt-dlp subtitle HTTP %s (%s)", res.status_code, code)
+                    break
+                body = res.text
+                break
+
+            if not body:
+                continue
+
+            try:
+                text = _parse_json3(body) if chosen["ext"] == "json3" else _parse_vtt(body)
+            except Exception as exc:
+                logger.info("yt-dlp subtitle parse failed (%s): %s", code, exc)
+                continue
+
             text = clean_transcript(text)
             if len(text) > 40:
                 return Transcript(
@@ -268,9 +319,12 @@ def _fetch_via_ytdlp(video_id: str) -> Transcript:
                     is_generated=code in auto and code not in manual,
                     source="yt-dlp",
                 )
-        except Exception as exc:  # pragma: no cover - network
-            logger.info("yt-dlp subtitle fetch failed (%s): %s", code, exc)
 
+    if throttled:
+        raise TranscriptUnavailable(
+            "YouTube is rate-limiting this server (HTTP 429). "
+            "Wait a few minutes and try again, or set YOUTUBE_PROXY."
+        )
     raise TranscriptUnavailable("yt-dlp found no usable captions")
 
 
