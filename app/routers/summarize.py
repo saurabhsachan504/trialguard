@@ -36,6 +36,17 @@ class VideoRequest(BaseModel):
     # None / "auto" => write in the video's own language.
     target_lang: str | None = Field(default=None, max_length=8)
 
+    # The extension (and, later, the mobile app) reads the transcript inside
+    # the user's own browser, where YouTube sees an ordinary viewer instead of
+    # our server. When that text arrives we never touch YouTube at all - which
+    # is why that path can never be rate-limited or IP-blocked.
+    #
+    # The cap is a memory guard, not a trust boundary: a caller who sends
+    # nonsense only wastes their own trial, because billing happens before
+    # this text is ever read.
+    transcript: str | None = Field(default=None, max_length=200_000)
+    transcript_lang: str | None = Field(default=None, max_length=8)
+
 
 class SummarizeRequest(VideoRequest):
     mode: str = Field(default="summary", pattern="^(summary|key_points|notes)$")
@@ -57,6 +68,35 @@ def _resolve_target(requested: str | None, detected: str) -> str:
     if not requested or requested in ("auto", "same"):
         return detected
     return requested.split("-")[0].lower()
+
+
+# Long enough to be a real transcript rather than an empty string or a stray
+# word - the same threshold fetch_transcript() uses on its own results.
+_MIN_CLIENT_TRANSCRIPT = 40
+
+
+async def _obtain_transcript(payload: VideoRequest, video_id: str) -> youtube.Transcript:
+    """Use the client's transcript when it sent one; otherwise fetch it here.
+
+    Falling back matters: a visitor without the extension, or on a phone, still
+    gets the old server-side path, so nothing that works today stops working.
+    """
+    supplied = (payload.transcript or "").strip()
+    if len(supplied) >= _MIN_CLIENT_TRANSCRIPT:
+        logger.info(
+            "transcript supplied by client for %s (%s chars, lang=%s)",
+            video_id,
+            len(supplied),
+            payload.transcript_lang,
+        )
+        return youtube.Transcript(
+            text=youtube.clean_transcript(supplied),
+            language=(payload.transcript_lang or "").split("-")[0].lower() or None,
+            is_generated=True,
+            source="client",
+        )
+
+    return await run_in_threadpool(youtube.fetch_transcript, video_id)
 
 
 class VideoInfoOut(BaseModel):
@@ -126,7 +166,7 @@ async def summarize(
     #    failure here is a normal HTTP error the UI can show cleanly.
     meta = await youtube.fetch_metadata(video_id)
     try:
-        transcript = await run_in_threadpool(youtube.fetch_transcript, video_id)
+        transcript = await _obtain_transcript(payload, video_id)
     except youtube.TranscriptUnavailable as exc:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc))
 
@@ -222,7 +262,7 @@ async def notes(
 
     meta = await youtube.fetch_metadata(video_id)
     try:
-        transcript = await run_in_threadpool(youtube.fetch_transcript, video_id)
+        transcript = await _obtain_transcript(payload, video_id)
     except youtube.TranscriptUnavailable as exc:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc))
 

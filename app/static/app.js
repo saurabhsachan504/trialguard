@@ -365,6 +365,66 @@
   }
 
   /** Read an NDJSON stream, calling onEvent for each line as it arrives. */
+  // --- Extension bridge ----------------------------------------------------
+  // When the TubeNotes extension is installed it can read the transcript from
+  // this user's own browser, so YouTube sees a person rather than our server.
+  // Free, unlimited, never rate-limited. With no extension we send nothing and
+  // the server fetches it the old way - so nothing here can break a visitor
+  // who does not have it.
+  let extReady = false;
+  const extWaiters = new Map();
+
+  window.addEventListener("message", (ev) => {
+    if (ev.source !== window) return;
+    const d = ev.data;
+    if (!d || d.source !== "tubenotes-ext") return;
+    if (d.type === "READY") { extReady = true; return; }
+    if (d.type === "TRANSCRIPT") {
+      const done = extWaiters.get(d.reqId);
+      if (done) { extWaiters.delete(d.reqId); done(d); }
+    }
+  });
+
+  // The content script may have loaded before this file; a ping makes sure we
+  // hear its READY either way.
+  try { window.postMessage({ source: "tubenotes-page", type: "PING" }, window.location.origin); } catch (_) {}
+
+  function extAsk(videoId, ms) {
+    return new Promise((resolve) => {
+      const reqId = "r" + Math.random().toString(36).slice(2);
+      const timer = setTimeout(() => { extWaiters.delete(reqId); resolve(null); }, ms);
+      extWaiters.set(reqId, (d) => { clearTimeout(timer); resolve(d && d.ok ? d : null); });
+      window.postMessage(
+        { source: "tubenotes-page", type: "GET_TRANSCRIPT", videoId, reqId },
+        window.location.origin
+      );
+    });
+  }
+
+  function videoIdFrom(input) {
+    const v = (input || "").trim();
+    if (/^[A-Za-z0-9_-]{11}$/.test(v)) return v;
+    try {
+      const u = new URL(v.includes("://") ? v : "https://" + v);
+      const host = u.hostname.replace(/^www\.|^m\./, "");
+      if (host === "youtu.be") return u.pathname.slice(1).split("/")[0] || null;
+      if (u.pathname === "/watch") return u.searchParams.get("v");
+      const parts = u.pathname.split("/").filter(Boolean);
+      if (parts.length >= 2 && ["shorts", "embed", "live", "v"].includes(parts[0])) return parts[1];
+    } catch (_) {}
+    return null;
+  }
+
+  async function extraFromExtension(url) {
+    if (!extReady) return {};
+    const id = videoIdFrom(url);
+    if (!id) return {};
+    let r = null;
+    try { r = await extAsk(id, 30000); } catch (_) {}
+    if (!r || !r.text) return {};
+    return { transcript: r.text, transcript_lang: r.lang || null };
+  }
+
   async function streamNdjson(path, body, onEvent) {
     const res = await api(path, { method: "POST", body, raw: true });
     if (!res.ok) {
@@ -396,7 +456,8 @@
     let langOut = null;
     const body = $("rBody");
 
-    await streamNdjson("/summarize", { url, device: device(), mode: m, target_lang: target || null }, (ev) => {
+    const extra = await extraFromExtension(url);
+    await streamNdjson("/summarize", { url, device: device(), mode: m, target_lang: target || null, ...extra }, (ev) => {
       if (ev.type === "meta") {
         paintChip(ev.entitlement);
         langOut = ev.language;
@@ -438,7 +499,8 @@
     $("rProgress").classList.remove("hidden");
     status("Reading the whole video…", true);
 
-    await streamNdjson("/notes", { url, device: device(), target_lang: target || null }, (ev) => {
+    const extra = await extraFromExtension(url);
+    await streamNdjson("/notes", { url, device: device(), target_lang: target || null, ...extra }, (ev) => {
       if (ev.type === "meta") {
         langOut = ev.language;
         const translated = ev.detected_language && ev.detected_language !== ev.language;
