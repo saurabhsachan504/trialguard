@@ -17,7 +17,7 @@ from fastapi.staticfiles import StaticFiles
 
 from app.config import settings
 from app.database import engine, init_db
-from app.routers import admin, auth, billing, summarize, usage, webhooks
+from app.routers import admin, auth, billing, ollama_proxy, summarize, usage, webhooks
 
 STATIC_DIR = Path(__file__).parent / "static"
 
@@ -98,6 +98,7 @@ app.include_router(summarize.router, prefix=settings.API_PREFIX)
 app.include_router(billing.router, prefix=settings.API_PREFIX)
 app.include_router(webhooks.router, prefix=settings.API_PREFIX)
 app.include_router(admin.router, prefix=settings.API_PREFIX)
+app.include_router(ollama_proxy.router, prefix=settings.API_PREFIX)
 
 
 @app.get("/healthz", tags=["meta"])
