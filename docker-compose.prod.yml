@@ -50,6 +50,9 @@ services:
     # public https://ollama.trueworks.in and straight back in.
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    networks:
+      - default
+      - baota_net
     ports:
       # host-only. Nginx proxies to this.
       - "127.0.0.1:8001:8000"
@@ -68,3 +71,10 @@ services:
 
 volumes:
   pgdata:
+
+# Ollama apne alag stack me chalta hai. Uske network se judne par
+# api seedhe us container se baat karta hai - host ka port beech me aata hi
+# nahi, isliye Ollama na LAN se dikhta hai na internet se.
+networks:
+  baota_net:
+    external: true
