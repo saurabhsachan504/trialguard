@@ -50,7 +50,13 @@ class Transcript:
     text: str
     language: str | None
     is_generated: bool
-    source: str  # "captions" | "yt-dlp"
+    source: str  # "captions" | "yt-dlp" | "client"
+    # YouTube ka apna "availability": public / unlisted / private /
+    # subscriber_only / premium_only / needs_auth. Sirf yt-dlp wala raasta ise
+    # bharta hai, kyunki wo info pehle se laata hai; captions wala raasta ye
+    # nahi jaanta, isliye None. None ka matlab "pata nahi" hai, "kharab" nahi -
+    # is_cacheable() usse sambhalta hai.
+    availability: str | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -265,6 +271,8 @@ def _fetch_via_ytdlp(video_id: str) -> Transcript:
     with yt_dlp.YoutubeDL(opts) as ydl:
         info = ydl.extract_info(watch_url(video_id), download=False)
 
+    # Ye pehle se aa chuka hai - iske liye koi alag request nahi jaati.
+    availability = info.get("availability")
     manual = info.get("subtitles") or {}
     auto = info.get("automatic_captions") or {}
     order = _caption_candidates(info, manual, auto)
@@ -318,6 +326,7 @@ def _fetch_via_ytdlp(video_id: str) -> Transcript:
                     language=code.split("-")[0].lower(),
                     is_generated=code in auto and code not in manual,
                     source="yt-dlp",
+                    availability=availability,
                 )
 
     if throttled:
@@ -326,6 +335,34 @@ def _fetch_via_ytdlp(video_id: str) -> Transcript:
             "Wait a few minutes and try again, or set YOUTUBE_PROXY."
         )
     raise TranscriptUnavailable("yt-dlp found no usable captions")
+
+
+# Jinke liye YouTube khud login maangta hai. Inki summary saanjhi nahi hoti.
+_PRIVATE_AVAILABILITY = frozenset(
+    {"private", "premium_only", "subscriber_only", "needs_auth"}
+)
+
+
+def is_cacheable(transcript: Transcript) -> bool:
+    """Kya is summary ko sab ke liye rakha ja sakta hai?
+
+    Asli sawaal ye nahi ki video public hai ya unlisted - asli sawaal ye hai ki
+    transcript AAYA KAHAN SE.
+
+    Hamara server bina kisi login ke captions maangta hai. Wo tabhi milte hain
+    jab video gumnaam pahunch me ho: private aur members-only videos ka
+    transcript server ko milta hi nahi. To "server ne bina login ke utha liya"
+    apne aap me saboot hai ki video gumnaam pahunch me hai.
+
+    Extension alag baat hai. Wo user ke apne cookies ke saath chalta hai,
+    isliye wo ek private video ka transcript bhi bhej sakta hai. Wo kabhi
+    saanjha nahi hota.
+    """
+    if transcript.source == "client":
+        return False
+    if (transcript.availability or "") in _PRIVATE_AVAILABILITY:
+        return False
+    return True
 
 
 def fetch_transcript(video_id: str) -> Transcript:

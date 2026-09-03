@@ -23,7 +23,7 @@ from app.database import get_db
 from app.deps import get_current_user
 from app.models import User
 from app.schemas import DeviceFingerprint, EntitlementOut
-from app.services import entitlements, ratelimit, summarizer, translate, youtube
+from app.services import entitlements, output_cache, ratelimit, summarizer, translate, youtube
 
 logger = logging.getLogger("trialguard.summarize")
 router = APIRouter(tags=["summarize"])
@@ -134,6 +134,107 @@ async def video_info(payload: VideoRequest, user: User = Depends(get_current_use
     return VideoInfoOut(**dataclasses.asdict(meta))
 
 
+def _store_cached(
+    video_id: str,
+    mode: str,
+    target: str,
+    model: str,
+    text: str,
+    detected: str,
+    transcript_chars: int,
+) -> None:
+    """Cache me likho - APNI ALAG session me, threadpool par.
+
+    Request ki apni session streaming ke poore samay khuli rehti hai. Usi par
+    likhna do tarah se khatarnak hai, aur dono baar hum ye dekh chuke hain:
+
+      * likhna fail ho jaye to session poisoned ho jaati hai (PendingRollback),
+        aur uske baad us session se kuch bhi nahi ho paata.
+      * lamba chalne wale transaction me row lock pakde rehna - isi ne poore
+        app ko jama diya tha (Cloudflare 524).
+
+    Isliye yahan apni chhoti session kholi jaati hai, likhkar turant band. Jo
+    bhi bigde, wo yahin ruk jaata hai - user ka jawab to ja hi chuka hai.
+    """
+    gen = get_db()
+    db = next(gen)
+    try:
+        output_cache.put(
+            db,
+            video_id,
+            mode,
+            target,
+            model,
+            text,
+            detected_lang=detected,
+            transcript_chars=transcript_chars,
+        )
+    except Exception:  # noqa: BLE001 - cache kabhi summary na todhe
+        try:
+            db.rollback()
+        except Exception:
+            pass
+        logger.warning("cache me rakhna fail hua: %s", video_id, exc_info=True)
+    finally:
+        try:
+            next(gen)
+        except StopIteration:
+            pass
+        except Exception:
+            logger.exception("cache session band karne me dikkat")
+
+
+def _cache_lookup(db: Session, payload, video_id: str):
+    """(row, target, model). row None hai to cache me kuch nahi mila.
+
+    Ye transcript laane se PEHLE chalta hai, isliye hit hone par YouTube par ek
+    bhi request nahi jaati - aur wahi requests pehle rate-limit ka kaaran bani
+    thi.
+
+    Agar user ne bhasha nahi chuni ("video ki apni bhasha"), to hamein pata
+    nahi ki wo kaun si hai - wo transcript se nikalti hai. Isliye cache se hi
+    poocha jaata hai ki is video ki bhasha pehle kya nikli thi.
+    """
+    requested = (payload.target_lang or "").strip().lower()
+    if requested in ("", "auto", "same"):
+        detected = output_cache.detected_lang_for(db, video_id)
+        if not detected:
+            # Is video ko pehle kabhi nahi dekha - to cache me ho hi nahi sakti.
+            return None, "", ""
+    else:
+        detected = ""
+    # Wahi function jo saamanya raaste me chalta hai, taaki dono kabhi alag na
+    # ho jayein.
+    target = _resolve_target(payload.target_lang, detected)
+    model = summarizer.plan_for(target)[0]
+    return output_cache.get(db, video_id, payload.mode, target, model), target, model
+
+
+async def _replay_cached(row, *, meta, target: str, model: str, entitlement):
+    """Cache se mili summary ko usi shakl me bhejo jaisi taazi banti hai.
+
+    Ek hi delta me poora text - saamanya raaste jaisa hi kram (meta, delta,
+    done), taaki UI me kuch alag na karna pade.
+    """
+    yield _event(
+        {
+            "type": "meta",
+            "video": dataclasses.asdict(meta),
+            "detected_language": row.detected_lang or target,
+            "detected_language_name": summarizer.language_name(row.detected_lang or target),
+            "language": target,
+            "language_name": summarizer.language_name(target),
+            "model": model,
+            "transcript_chars": row.transcript_chars,
+            "transcript_source": "cache",
+            "cached": True,
+            "entitlement": json.loads(entitlement.model_dump_json()),
+        }
+    )
+    yield _event({"type": "delta", "text": row.text})
+    yield _event({"type": "done", "text": row.text, "language": target, "cached": True})
+
+
 @router.post("/summarize")
 async def summarize(
     payload: SummarizeRequest,
@@ -165,6 +266,24 @@ async def summarize(
     # 2. Metadata + transcript. Both happen BEFORE the stream opens so a
     #    failure here is a normal HTTP error the UI can show cleanly.
     meta = await youtube.fetch_metadata(video_id)
+
+    # 2a. Cache. Wahi video, wahi mode, wahi bhasha, wahi model = wahi jawab.
+    #     Ye transcript laane se pehle hai, isliye hit par YouTube ko chhua bhi
+    #     nahi jaata. (Cache band ho to ye chupchap None lautata hai.)
+    cached_row, cached_target, cached_model = _cache_lookup(db, payload, video_id)
+    if cached_row is not None:
+        return StreamingResponse(
+            _replay_cached(
+                cached_row,
+                meta=meta,
+                target=cached_target,
+                model=cached_model,
+                entitlement=entitlement,
+            ),
+            media_type="application/x-ndjson",
+            headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"},
+        )
+
     try:
         transcript = await _obtain_transcript(payload, video_id)
     except youtube.TranscriptUnavailable as exc:
@@ -229,6 +348,21 @@ async def summarize(
                 )
 
         yield _event({"type": "done", "text": text, "language": target})
+
+        # Jama karna SABSE AAKHIR me - user ka jawab ja chuka hai, to yahan
+        # kuch bigde bhi to farq nahi padta. Cache band ho to _store_cached()
+        # khud hi kuch nahi karta.
+        if youtube.is_cacheable(transcript):
+            await run_in_threadpool(
+                _store_cached,
+                video_id,
+                payload.mode,
+                target,
+                model,
+                text,
+                detected,
+                len(transcript.text),
+            )
 
     return StreamingResponse(
         generate(),
