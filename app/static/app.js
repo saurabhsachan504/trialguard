@@ -416,13 +416,20 @@
   }
 
   async function extraFromExtension(url) {
-    if (!extReady) return {};
-    const id = videoIdFrom(url);
-    if (!id) return {};
-    let r = null;
-    try { r = await extAsk(id, 30000); } catch (_) {}
-    if (!r || !r.text) return {};
-    return { transcript: r.text, transcript_lang: r.lang || null };
+    // BAND. Ye pul extension se transcript maangta tha aur 30 second tak uska
+    // intezaar karta tha. Wo raasta kabhi kaam nahi kiya: YouTube ab
+    // api/timedtext par HTTP 200 ke saath KHAALI body lautata hai - server se,
+    // extension ke service worker se, aur khud YouTube ke page ke andar se bhi.
+    //
+    // Jab tak extension lagi nahi thi, extReady false rehta tha aur ye chupchap
+    // lautta tha. Extension lagte hi wo READY bhejne lagi aur har summary se 21
+    // second cheen liye. Naapa gaya, ek hi video par:
+    //     extension lagi hui  ->  Queued at 21,300 ms
+    //     incognito (band)    ->  Queued at    293 ms
+    //
+    // Backend ka `transcript` field waise hi hai - wo nuksaan nahi karta aur
+    // kabhi mobile app banane par wahi raasta kaam aayega.
+    return {};
   }
 
   async function streamNdjson(path, body, onEvent) {

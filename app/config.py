@@ -90,6 +90,11 @@ class Settings(BaseSettings):
     # back into English or produce broken text.
     OLLAMA_INDIC_MODEL: str = "sarvam-m-q4"
     OLLAMA_TIMEOUT_SECONDS: int = 300
+    # Sochne wale models (gemma4 jaise) pehle chupchap soch likhte hain. Naya
+    # Ollama us soch ko alag `thinking` field me bhejta hai aur `content`
+    # khaali rakhta hai - screen tab tak khaali padi rehti hai. Naapa gaya:
+    # soch ke saath pehla content 20.60s, band karne par 0.98s.
+    OLLAMA_SKIP_THINKING: bool = True
 
     # Longer transcripts are sampled down to this budget before summarising.
     # This applies to the on-screen SUMMARY only - the full notes always read

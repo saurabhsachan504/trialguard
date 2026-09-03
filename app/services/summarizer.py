@@ -318,6 +318,13 @@ async def stream_chat(
         },
     }
 
+    # Sochne wale models ko soch band karne ko kaho. Warna wo pehle 20 second
+    # tak `thinking` bhejta hai jisme `content` khaali hota hai, aur user ko
+    # khaali screen dikhti hai. Key sirf band karne ke liye bheji jaati hai -
+    # jo models sochte hi nahi unhe isse koi farq nahi padta.
+    if getattr(settings, "OLLAMA_SKIP_THINKING", True):
+        payload["think"] = False
+
     timeout = httpx.Timeout(settings.OLLAMA_TIMEOUT_SECONDS, connect=15)
     async with httpx.AsyncClient(timeout=timeout) as client:
         async with client.stream("POST", url, json=payload) as res:
