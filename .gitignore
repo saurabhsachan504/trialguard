@@ -14,3 +14,4 @@ htmlcov/
 *.bak2
 *.bak
 *.bak[0-9]
+*.bak*
