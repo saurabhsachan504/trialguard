@@ -17,6 +17,8 @@ import re
 
 import httpx
 
+from app.config import settings
+
 logger = logging.getLogger("trialguard.translate")
 
 ENDPOINT = "https://translate.googleapis.com/translate_a/single"
@@ -104,26 +106,64 @@ def _chunk(text: str, size: int = 1500) -> list[str]:
     return chunks or [""]
 
 
+async def _ollama(chunk: str, target: str) -> str:
+    """Ek tukda apne model se anuvaad karake wapas."""
+    from app.services.summarizer import LANG_NAMES   # circular import se bachne ko
+    name = LANG_NAMES.get(target, target)
+    payload = {
+        "model": settings.OLLAMA_MODEL,
+        "stream": False,
+        "think": False,        # sochne wala hissa yahan bekaar hai
+        "keep_alive": -1,
+        # num_ctx wahi 8192 jo summarizer bhejta hai. Alag bhejne par Ollama
+        # poora model utaar kar dobara chadhata hai - har translate par ~9
+        # second, aur uske baad agli summary par phir se.
+        "options": {"temperature": 0.1, "num_ctx": 8192, "num_predict": 4000},
+        "messages": [
+            {"role": "system", "content": (
+                f"You are a professional translator. Translate the user text "
+                f"into {name}, in its own native script.\n"
+                f"- Output ONLY the translation. No notes, no preamble.\n"
+                f"- Keep the Markdown exactly: #, ##, -, *, numbering, blank lines.\n"
+                f"- Do not translate URLs, code or numbers.\n"
+                f"- Never answer in English unless {name} is English."
+            )},
+            {"role": "user", "content": chunk},
+        ],
+    }
+    url = settings.OLLAMA_URL.rstrip("/") + "/api/chat"
+    async with httpx.AsyncClient(timeout=httpx.Timeout(180, connect=15)) as c:
+        res = await c.post(url, json=payload)
+        res.raise_for_status()
+        return (res.json().get("message", {}).get("content") or "").strip()
+
+
+async def _google(chunk: str, target: str) -> str:
+    """Purana raasta - ab sirf fallback."""
+    async with httpx.AsyncClient(timeout=45) as c:
+        res = await c.get(ENDPOINT, params={
+            "client": "gtx", "sl": "auto", "tl": target, "dt": "t", "q": chunk})
+        if res.status_code != 200:
+            raise RuntimeError(f"Translate HTTP {res.status_code}")
+        data = res.json()
+        return "".join((x[0] or "") for x in (data[0] if data and data[0] else []) if x)
+
+
 async def translate(text: str, target: str) -> str:
-    """Translate Markdown into `target`, preserving line structure."""
+    """Markdown ko `target` bhasha me, line structure sambhalte hue."""
     if not text or not target:
         return text
-
     out: list[str] = []
-    async with httpx.AsyncClient(timeout=45) as client:
-        for chunk in _chunk(text):
-            if not chunk.strip():
-                out.append(chunk)
-                continue
-            res = await client.get(
-                ENDPOINT,
-                params={"client": "gtx", "sl": "auto", "tl": target, "dt": "t", "q": chunk},
-            )
-            if res.status_code != 200:
-                raise RuntimeError(f"Translate HTTP {res.status_code}")
-            data = res.json()
-            segments = data[0] if data and data[0] else []
-            out.append("".join((s[0] or "") for s in segments if s))
+    for chunk in _chunk(text, size=2000):
+        if not chunk.strip():
+            out.append(chunk)
+            continue
+        try:
+            piece = await _ollama(chunk, target)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("ollama translate (%s) fail, Google par: %s", target, exc)
+            piece = await _google(chunk, target)
+        out.append(piece or chunk)
     return "\n".join(out)
 
 
