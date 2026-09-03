@@ -324,3 +324,58 @@ class RateLimitBucket(Base):
         DateTime(timezone=True), nullable=False
     )
     count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+
+
+class CachedOutput(Base):
+    """One generated summary, reusable by everyone who asks for the same thing.
+
+    The same video is summarised by many different people and the answer is the
+    same every time. Generating it costs minutes of GPU; reading it back is one
+    indexed SELECT. So the first person pays for it and everyone after is served
+    instantly - they are still charged a trial, because they are still getting
+    the product.
+
+    The unique constraint covers everything that changes the output. Two of
+    those are easy to forget:
+      * ``model`` - a summary written by gemma2 is not the one gemma4 writes.
+      * ``prompt_version`` - bumped by hand in output_cache.py whenever a prompt
+        changes, so improving a prompt cannot leave people reading the old
+        wording forever.
+    """
+
+    __tablename__ = "cached_outputs"
+    __table_args__ = (
+        UniqueConstraint(
+            "video_id", "mode", "lang", "model", "prompt_version",
+            name="uq_cached_output_key",
+        ),
+        # purge_stale() sweeps by age; without this it would scan the table.
+        Index("ix_cached_outputs_last_used_at", "last_used_at"),
+        # detected_lang_for() looks up a video without knowing the rest of the key.
+        Index("ix_cached_outputs_video_id", "video_id"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    video_id: Mapped[str] = mapped_column(String(16), nullable=False)
+    mode: Mapped[str] = mapped_column(String(32), nullable=False)
+    # The language the OUTPUT is written in - not the video's own language.
+    lang: Mapped[str] = mapped_column(String(8), nullable=False)
+    model: Mapped[str] = mapped_column(String(120), nullable=False)
+    prompt_version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+
+    text: Mapped[str] = mapped_column(Text, nullable=False)
+    chars: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+
+    # The video's OWN language. Lets a "same as the video" request be answered
+    # from cache without fetching the transcript first - and fetching the
+    # transcript is the slow, rate-limited part.
+    detected_lang: Mapped[str] = mapped_column(String(8), nullable=False, default="")
+    transcript_chars: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+
+    hits: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    last_used_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )

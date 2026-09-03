@@ -95,6 +95,15 @@ class Settings(BaseSettings):
     # This applies to the on-screen SUMMARY only - the full notes always read
     # the entire transcript.
     TRANSCRIPT_MAX_CHARS: int = 12000
+    # ---- output cache ----------------------------------------------------
+    # Ek baar bani summary sabke liye. Default BAND hai - table ban jaane aur
+    # sab theek dikhne ke baad .env me OUTPUT_CACHE_ENABLED=true kijiye.
+    OUTPUT_CACHE_ENABLED: bool = False
+    # Isse chhota jawab kabhi cache me nahi jaata - adhoora ya toota hua jawab
+    # hamesha ke liye baithane se accha hai ki wo dobara bane.
+    OUTPUT_CACHE_MIN_CHARS: int = 200
+    # Itne din tak koi na maange to entry hat jaati hai. 0 = kabhi na hatao.
+    OUTPUT_CACHE_TTL_DAYS: int = 90
 
     # ---- full notes (the PDF) ------------------------------------------
     # Smaller chunks give the model less to compress, so more of the detail
